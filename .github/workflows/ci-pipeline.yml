@@ -119,7 +119,6 @@ jobs:
             push: true
             tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:latest
 
-#disable the SAST SonarQube test to speed up the pipeline
   sonarqube:
     needs: test
     runs-on: ubuntu-latest
