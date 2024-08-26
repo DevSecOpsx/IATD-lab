@@ -70,6 +70,11 @@ jobs:
 
   sonarqube:
     needs: test
+    runs-on: ubuntu-latest
+    if: false
+
+  sonarqube:
+    needs: test
     if: true
     runs-on: ubuntu-latest
     steps:
@@ -118,11 +123,6 @@ jobs:
           with:
             push: true
             tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:latest
-
-  sonarqube:
-    needs: test
-    runs-on: ubuntu-latest
-    if: false
 
   submit_results:
     needs: [build]
