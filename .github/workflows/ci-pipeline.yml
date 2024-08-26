@@ -70,11 +70,6 @@ jobs:
 
   sonarqube:
     needs: test
-    runs-on: ubuntu-latest
-    if: false
-
-  sonarqube:
-    needs: test
     if: true
     runs-on: ubuntu-latest
     steps:
