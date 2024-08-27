@@ -119,6 +119,11 @@ jobs:
             push: true
             tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:latest
 
+  sonarqube:
+    needs: test
+    runs-on: ubuntu-latest
+    if: false
+
   submit_results:
     needs: [build]
     if: true
