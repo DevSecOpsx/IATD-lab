@@ -116,7 +116,7 @@ jobs:
        path: sonarqube-report.json
  
   build:
-    needs: submit_reports
+    needs: [sonarqube, dast, image-scan]
     if: true
     permissions:
       id-token: write
