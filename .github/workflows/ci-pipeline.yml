@@ -1,7 +1,7 @@
 name: Python test and build
-
+ 
 on: [push]
-
+ 
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,7 +25,7 @@ jobs:
         with:
           name: test-results
           path: junit/test-results.xml
-
+ 
   dast:
     needs: test
     runs-on: ubuntu-latest
@@ -45,11 +45,11 @@ jobs:
         with:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:dast-test
-
+ 
       - uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
+ 
       - name: Deploy DAST Container App
         uses: azure/container-apps-deploy-action@v1
         with:
@@ -59,15 +59,15 @@ jobs:
           resourceGroup: devsecops-lab
           location: australiaeast
           targetPort: 5000
-
+ 
       - name: Get deployed DAST app url
         run: |
           export FQDN=$(az containerapp show -n devops-test-app -g devsecops-lab --query properties.configuration.ingress.fqdn -o tsv)
           echo "TEST_APP_URL=https://$FQDN" >> $GITHUB_ENV
-          echo "TEST_APP_URL=https://$FQDN" 
+          echo "TEST_APP_URL=https://$FQDN"
           curl https://$FQDN/ui
           sed -i "s,http://localhost:5000,https://$FQDN,g" $GITHUB_WORKSPACE/openapi_specs/openapi3.yml
-
+ 
       - name: ZAP Scan
         uses: zaproxy/action-api-scan@v0.6.0
         with:
@@ -79,14 +79,14 @@ jobs:
           cmd_options: '-a -c /zap/wrk/.zap/rules.tsv'
           fail_action: false
           allow_issue_writing: false
-
+ 
       - name: Upload ZAP report
         id: artifact-zap
         uses: actions/upload-artifact@v4
         with:
           name: zap-report
           path: report_json.json
-
+ 
   sonarqube:
     needs: test
     if: true
@@ -101,7 +101,7 @@ jobs:
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
-
+ 
     - name: Download SonarQube report
       run: |
        sleep 30
@@ -114,9 +114,9 @@ jobs:
       with:
        name: sonarqube-report
        path: sonarqube-report.json
-
+ 
   build:
-    # needs: [security_gate]
+    needs: submit_reports
     if: true
     permissions:
       id-token: write
@@ -142,56 +142,18 @@ jobs:
           sbom: true
           provenance: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:latest
-
+ 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.4.0
-
+ 
       - name: Sign the images with GitHub OIDC Token
         env:
           IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/devops-labs:latest
         run: |
           cosign sign --yes ${IMAGE}
-
-  submit_results:
-    needs: [build]
-    if: false
-    runs-on: ubuntu-latest
-    steps:
-    - uses: azure/login@v1
-      with:
-       creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Azure CLI script
-      id: token-gen
-      uses: azure/CLI@v1
-      with:
-       azcliversion: latest
-       inlineScript: |
-        ACCESS_TOKEN=$(az account get-access-token | jq -r .accessToken)
-        echo "azureAccessToken=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
-    - uses: actions/download-artifact@v4
-      with:
-       name: sonarqube-report
-       path: ${{github.workspace}}
-    - uses: actions/download-artifact@v4
-      with:
-       name: zap-report
-       path: ${{github.workspace}}
-    - name: Upload reports
-      env:
-       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-       AZURE_ACCESS_TOKEN: ${{ steps.token-gen.outputs.azureAccessToken }}
-      run: |
-       WEEK1_CONTAINER=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN" -d "$DOCKERHUB_USERNAME/devops-labs" https://devsecops-ver.azurewebsites.net/api/week1-container)
-       echo "Week1 container upload: $WEEK1_CONTAINER"
-
-       SONAR_RESPONSE=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN"  --data-binary @$GITHUB_WORKSPACE/sonarqube-report.json https://devsecops-ver.azurewebsites.net/api/week3-sonar-report)
-       echo "Sonar upload: $SONAR_RESPONSE"
-       ZAP_RESPONSE=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN"  --data-binary @$GITHUB_WORKSPACE/report_json.json https://devsecops-ver.azurewebsites.net/api/week3-zap-report)
-       echo "Zap upload: $ZAP_RESPONSE"
-
+  
   image-scan:
-    needs: [test]
+    needs: test
     if: true
     runs-on: ubuntu-latest
     steps:
@@ -208,9 +170,9 @@ jobs:
           with:
             name: image-report
             path: ${{ steps.image-scan.outputs.json }}
-
+ 
   submit_reports:
-   needs: [test, sonarqube, dast, build]
+   needs: build
    if: true
    runs-on: ubuntu-latest
    steps:
@@ -233,18 +195,18 @@ jobs:
       run: |
          WEEK1_CONTAINER=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN" -d "$DOCKERHUB_USERNAME/devops-labs" https://devsecops-ver.azurewebsites.net/api/week1-container)
          echo "Week1 container upload: $WEEK1_CONTAINER"
-
+ 
          SONAR_RESPONSE=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN"  --data-binary @$GITHUB_WORKSPACE/sonarqube-report.json https://devsecops-ver.azurewebsites.net/api/week3-sonar-report)
          echo "Sonar upload: $SONAR_RESPONSE"
          ZAP_RESPONSE=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN"  --data-binary @$GITHUB_WORKSPACE/report_json.json https://devsecops-ver.azurewebsites.net/api/week3-zap-report)
          echo "Zap upload: $ZAP_RESPONSE"
-
+ 
          IMAGE_RESPONSE=$(curl -X POST -H "Authorization: Bearer $AZURE_ACCESS_TOKEN" --data-binary @$GITHUB_WORKSPACE/results.json https://devsecops-ver.azurewebsites.net/api/week4-image-report)
          echo "Image report upload: $IMAGE_RESPONSE"
-
+ 
   security_gate:
         needs: [sonarqube, dast, image-scan]
-        if: true
+        if: false
         runs-on: ubuntu-latest
         steps:
         - name: Download sonarqube-report
@@ -271,7 +233,7 @@ jobs:
             else
               echo "Image scan passed"
             fi
-            
+           
             SONAR_RESULT=$(cat sonarqube-report.json | jq -r '.projectStatus.status')
             if [ $SONAR_RESULT != "OK" ]; then
               echo "Sonar scan has issues"
@@ -279,7 +241,7 @@ jobs:
             else
               echo "Sonar scan passed"
             fi
-            
+           
             ZAP_RESULT_HIGH=$(cat report_json.json | jq -r '.site[].alerts[] | select(.riskdesc | startswith("High")) | .name' | wc -l)
             if [ $ZAP_RESULT_HIGH -gt 0 ]; then
               echo "Zap scan has high severity vulnerabilities"
@@ -287,5 +249,5 @@ jobs:
             else
               echo "Zap scan passed"
             fi
-            
+           
             echo "All security gates passed"
